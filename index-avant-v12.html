@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0d1523">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="LexiCycle">
+  <meta name="description" content="Révisions intelligentes d’anglais et d’italien, hors connexion et sans compte.">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <link rel="icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css?v=1.1.0">
+  <title>LexiCycle · Anglais & italien</title>
+  <script>
+/* lexicycle-startup-watchdog-v1 */
+(function () {
+  function stillLoading() {
+    var a = document.getElementById('app');
+    return a && a.textContent.indexOf('Ouverture de LexiCycle') !== -1;
+  }
+
+  function errorView(message) {
+    if (!stillLoading()) return;
+
+    document.getElementById('app').innerHTML =
+      '<main style="font-family:system-ui;padding:28px;max-width:600px;margin:auto;color:#f1f5fa">' +
+      '<h1>LexiCycle ne peut pas démarrer</h1>' +
+      '<p>' + message + '</p>' +
+      '<p>Vérifie que app.js et styles.css sont publiés avec index.html.</p>' +
+      '<p>Recharge ensuite avec Internet activé.</p>' +
+      '</main>';
+  }
+
+  window.addEventListener('error', function (e) {
+    if (stillLoading()) {
+      errorView('Erreur JavaScript : ' + String(e.message || 'fichier inaccessible'));
+    }
+  });
+
+  window.addEventListener('unhandledrejection', function (e) {
+    if (stillLoading()) {
+      errorView('Erreur au démarrage : ' +
+        String(e.reason && e.reason.message || e.reason || 'inconnue'));
+    }
+  });
+
+  setTimeout(function () {
+    if (stillLoading()) {
+      errorView('Le chargement a dépassé 10 secondes. Vérifie les fichiers et le stockage local.');
+    }
+  }, 10000);
+}());
+</script>
+<script src="./app.js?v=1.1.0" defer></script>
+</head>
+<body>
+  <div id="app"><main class="loading">Ouverture de LexiCycle…</main></div>
+  <noscript>Active JavaScript pour utiliser LexiCycle.</noscript>
+</body>
+</html>
