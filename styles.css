@@ -18,3 +18,32 @@
 .lc-task-text p{font-size:13px;line-height:1.45;color:var(--muted)}
 .lc-done{display:grid;place-items:center;flex:none;width:34px;height:34px;border:1px solid #6585a4;border-radius:10px;background:#223d54;color:#93adbf}
 .lc-done:hover{color:#e4fff1;background:#245749}
+
+/* LexiCycle V1.4 */
+html,body{
+ width:100%;
+ max-width:100%;
+ overflow-x:hidden;
+ overscroll-behavior-x:none;
+}
+body{
+ touch-action:pan-y;
+}
+html,body,.shell{
+ scrollbar-width:none;
+ -ms-overflow-style:none;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+.shell::-webkit-scrollbar{
+ display:none;
+ width:0;
+ height:0;
+}
+.shell,.card,.top,.row,.grid2,.study-front{
+ max-width:100%;
+ min-width:0;
+}
+input,textarea,select{
+ max-width:100%;
+}
