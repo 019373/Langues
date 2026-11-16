@@ -1,5 +1,5 @@
 
-const CACHE = 'lexicycle-selfcontained-v14';
+const CACHE = 'lexicycle-selfcontained-v141';
 
 self.addEventListener('install', e => {
   e.waitUntil(
