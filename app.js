@@ -167,6 +167,7 @@ function tell(message,error=false) { flash={message,error}; render(); }
 function eWeek() { const x=monday(); x.setDate(x.getDate()+6); return localDay(x); }
 // lexi-v13-custom
 const iconPath = {
+ school:'<path d="M3 5h18v14H3zM8 5v14M12 9h6M12 13h6"/>',
  home:'<path d="m3 10 9-7 9 7v10H3zM9 20v-8h6v8"/>',
  book:'<path d="M12 6v15M12 6C9 4 6 4 3 5v15c3-1 6-1 9 1m0-15c3-2 6-2 9-1v15c-3-1-6-1-9 1"/>',
  study:'<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9h10M7 13h7"/>',
@@ -226,6 +227,162 @@ function lcHomework(){
  </div></section>`;
 }
 
+// LC_SCHOOL_V15 : école séparée des cartes B2
+let schoolPackId=null,schoolCardId=null,schoolRevealed=false;
+let schoolSession={last:null,turn:0,seen:{},retry:{}};
+
+function schoolReset(){
+ schoolCardId=null;
+ schoolRevealed=false;
+ schoolSession={last:null,turn:0,seen:{},retry:{}};
+}
+function schoolData(){
+ if(!state.school)state.school={packs:[],reviews:[]};
+ return state.school;
+}
+function schoolPick(pack){
+ const cards=pack.cards;
+ if(!cards.length)return null;
+ const possible=cards.filter(c=>cards.length===1||c.id!==schoolSession.last);
+ const ready=possible.filter(c=>schoolSession.retry[c.id]!=null&&schoolSession.retry[c.id]<=schoolSession.turn);
+ const unseen=possible.filter(c=>!schoolSession.seen[c.id]&&schoolSession.retry[c.id]==null);
+ let group=ready.length?ready:unseen.length?unseen:possible.filter(c=>schoolSession.retry[c.id]==null);
+ if(!group.length)group=possible;
+ const weights=group.map(c=>1/Math.pow(1+(schoolSession.seen[c.id]||0),1.3));
+ let n=Math.random()*weights.reduce((x,y)=>x+y,0),picked=group[group.length-1];
+ for(let i=0;i<group.length;i++){
+  n-=weights[i];
+  if(n<=0){picked=group[i];break;}
+ }
+ delete schoolSession.retry[picked.id];
+ schoolSession.seen[picked.id]=(schoolSession.seen[picked.id]||0)+1;
+ schoolSession.last=picked.id;
+ schoolSession.turn++;
+ return picked;
+}
+function schoolView(){
+ const data=schoolData(),pack=data.packs.find(p=>p.id===schoolPackId);
+ const input='<input class="file-input" type="file" id="schoolInput" accept=".json,application/json">';
+ if(pack){
+  let card=pack.cards.find(c=>c.id===schoolCardId);
+  if(!card){
+   card=schoolPick(pack);
+   schoolCardId=card?.id||null;
+   schoolRevealed=false;
+  }
+  return `<div class="row mb"><button class="btn small ghost" data-school-back>Retour à École</button><span class="badge">${esc(pack.subject)}</span></div>
+   <h1>${esc(pack.title)}</h1><p class="sub">Révision illimitée et aléatoire. Les erreurs reviennent plus souvent.</p>
+   ${card?`<div class="study-front school-front"><div><div class="caption mb">QUESTION</div><div class="prompt">${esc(card.front)}</div>
+    ${schoolRevealed?`<hr class="thin"><div class="answer">${esc(card.back)}</div>${card.note?`<p class="example">${esc(card.note)}</p>`:''}`:''}</div></div>
+    ${schoolRevealed?`<div class="rating">
+      ${[['0','repeat','Oublié'],['1','clock','Difficile'],['2','check','Correct'],['3','star','Facile']].map(([n,ico,t])=>`<button class="btn r${n}" data-school-rate="${n}">${lcIcon(ico,18)}<span>${t}</span></button>`).join('')}
+     </div>`:`<button class="btn primary full" data-school-reveal>Voir la réponse</button>`}
+    <div class="caption mt">${pack.cards.length} cartes · réponses enregistrées sur ton appareil.</div>`:'<div class="card empty">Ce paquet est vide.</div>'}
+   ${input}`;
+ }
+ return `<h1>École</h1><p class="sub">Vocabulaire de cours, conjugaisons, terminaisons et autres notions à apprendre. Séparé de ton programme B2.</p>
+ <div class="card accent"><h2>${lcIcon('upload',18)} Importer un cours</h2>
+ <p class="caption">Envoie-moi tes mots ou tes règles dans ChatGPT. Je te prépare un fichier JSON à importer ici.</p>
+ <div class="stack mt"><button class="btn primary full" data-school-import>${lcIcon('upload',17)} Importer un fichier école</button>
+ <button class="btn ghost full" data-school-example>Exemple du format JSON</button></div></div>
+ <div class="card"><div class="row"><h2>Mes cours</h2><span class="pill">${data.packs.length}</span></div>
+ ${data.packs.length?data.packs.map(p=>{
+ const reviews=data.reviews.filter(r=>r.packId===p.id);
+ const fails=reviews.filter(r=>r.rating<=1).length;
+ return `<div class="school-pack"><div class="school-pack-content"><strong>${esc(p.title)}</strong><div class="caption">${esc(p.subject)} · ${p.cards.length} cartes · ${reviews.length} révisions${fails?' · '+fails+' difficultés':''}</div></div>
+ <button class="btn small" data-school-open="${esc(p.id)}">Réviser</button></div>`;
+ }).join(''):'<div class="empty">Aucun cours importé pour le moment.</div>'}</div>${input}`;
+}
+function validateSchoolPack(x){
+ if(!x||x.kind!=='lexicycle-school-pack'||x.schemaVersion!==1||!isString(x.packId,100)||!isString(x.title,140)||!isString(x.subject,80)||!Array.isArray(x.cards)||x.cards.length<1||x.cards.length>500)throw Error('Fichier École invalide.');
+ const ids=new Set();
+ for(const c of x.cards){
+  if(!c||!isString(c.id,100)||ids.has(c.id)||!isString(c.front,500)||!isString(c.back,500)||(c.note!=null&&(typeof c.note!=='string'||c.note.length>600)))throw Error('Carte école invalide.');
+  ids.add(c.id);
+ }
+ return x;
+}
+async function schoolImport(raw){
+ const x=validateSchoolPack(raw),data=schoolData();
+ let pack=data.packs.find(p=>p.id===x.packId),added=0,changed=0;
+ if(!pack){
+  pack={id:x.packId,title:x.title.trim(),subject:x.subject.trim(),cards:[],createdAt:stamp()};
+  data.packs.push(pack);
+ }
+ pack.title=x.title.trim();
+ pack.subject=x.subject.trim();
+ pack.updatedAt=stamp();
+ for(const incoming of x.cards){
+  const old=pack.cards.find(c=>c.id===incoming.id);
+  if(old){
+   old.front=incoming.front.trim();
+   old.back=incoming.back.trim();
+   old.note=(incoming.note||'').trim();
+   changed++;
+  }else{
+   pack.cards.push({
+    id:incoming.id,front:incoming.front.trim(),
+    back:incoming.back.trim(),note:(incoming.note||'').trim(),
+    dueAt:0,repetitions:0,intervalDays:0,ease:2.5,lapses:0
+   });
+   added++;
+  }
+ }
+ await save();
+ schoolPackId=null;
+ schoolReset();
+ tell(`Cours importé : ${added} nouvelle(s) carte(s), ${changed} mise(s) à jour. Progression conservée.`);
+}
+function schoolRate(rating){
+ const pack=schoolData().packs.find(p=>p.id===schoolPackId);
+ const c=pack?.cards.find(c=>c.id===schoolCardId);
+ if(!schoolRevealed||!c||![0,1,2,3].includes(rating))return;
+ const t=now(),due=c.dueAt<=t,prev=c.intervalDays;
+ if(rating===0){
+  c.lapses++;c.repetitions=0;
+  c.ease=Math.max(1.3,c.ease-.2);
+  c.intervalDays=0;c.dueAt=t+600000;
+ }
+ if(rating===1){
+  c.ease=Math.max(1.3,c.ease-.12);
+  if(due){
+   c.repetitions++;
+   c.intervalDays=1;c.dueAt=t+86400000;
+  }else{
+   c.intervalDays=Math.min(prev||1,1);
+   c.dueAt=Math.min(c.dueAt,t+86400000);
+  }
+ }
+ if(rating>=2&&due){
+  c.repetitions++;
+  if(rating===3)c.ease=Math.min(3.1,c.ease+.12);
+  c.intervalDays=prev===0?(rating===3?4:1):Math.max(rating===3?4:2,Math.round(prev*(c.ease+(rating===3?.3:0))));
+  c.dueAt=t+c.intervalDays*86400000;
+ }
+ schoolData().reviews.push({
+  packId:pack.id,cardId:c.id,rating,at:stamp(),freePractice:!due
+ });
+ if(rating<=1)schoolSession.retry[c.id]=schoolSession.turn+(rating===0?1:3);
+ else delete schoolSession.retry[c.id];
+ schoolCardId=null;
+ schoolRevealed=false;
+ save();
+ render();
+}
+function schoolExample(){
+ return {
+  kind:'lexicycle-school-pack',
+  schemaVersion:1,
+  packId:'italien-terminaisons-01',
+  title:'Italien · Présent',
+  subject:'Italien',
+  cards:[
+   {id:'it-present-are-noi',front:'Terminaison des verbes en -are avec noi',back:'-iamo',note:'Parlare → noi parliamo'},
+   {id:'it-present-are-voi',front:'Terminaison des verbes en -are avec voi',back:'-ate',note:'Parlare → voi parlate'}
+  ]
+ };
+}
+
 function segment() { return `<div class="seg" role="group" aria-label="Langue">
   <button data-language="all" class="${langFilter==='all'?'active':''}">Toutes</button>
   <button data-language="en" class="${langFilter==='en'?'active':''}">Anglais</button>
@@ -234,12 +391,12 @@ function layout(content) {
   root.innerHTML=`<div class="shell"><header class="top"><div class="brand"><div class="mark">${lcIcon("book",25)}</div><div><div class="brand-name">LexiCycle</div><div class="small">Anglais & italien</div></div></div><span class="pill ${navigator.onLine?'online':'offline'}" id="networkStatus">${lcIcon(navigator.onLine?'wifi':'offline',14)} ${navigator.onLine?'En ligne':'Hors ligne'}</span></header>
   ${flash?`<div class="notice ${flash.error?'error':'success'}">${esc(flash.message)}</div>`:''}
   ${content}</div><nav class="nav"><div class="nav-inner">
-  ${[['home','home','Accueil'],['study','study','Réviser'],['library','cards','Cartes'],['stats','stats','Bilan']].map(([name,ico,label])=>`<button data-screen="${name}" class="${screen===name?'active':''}" aria-label="${label}"><span class="ni">${lcIcon(ico,21)}</span>${label}</button>`).join('')}
+  ${[['home','home','Accueil'],['study','study','Réviser'],['school','school','École'],['stats','stats','Bilan']].map(([name,ico,label])=>`<button data-screen="${name}" class="${screen===name?'active':''}" aria-label="${label}"><span class="ni">${lcIcon(ico,21)}</span>${label}</button>`).join('')}
   </div></nav>`;
 }
 function render() {
   if (!state) return;
-  const content=screen==='editor' ? editorView(state.cards.find(x=>x.id===editId)) : ({home:homeView,study:studyView,library:libraryView,stats:statsView,settings:settingsView}[screen]?.()||homeView());
+  const content=screen==='editor' ? editorView(state.cards.find(x=>x.id===editId)) : ({home:homeView,study:studyView,library:libraryView,school:schoolView,stats:statsView,settings:settingsView}[screen]?.()||homeView());
   layout(content);
 }
 function homeView() {
@@ -311,6 +468,7 @@ function settingsView() {
     <div class="stack mt"><button class="btn full" data-action="downloadBackup">${lcIcon('download',17)} Sauvegarder toutes les données</button><button class="btn ghost full" data-action="restoreBackup">${lcIcon('upload',17)} Restaurer une sauvegarde JSON</button></div>
     <div class="notice">Restaurer une sauvegarde remplace les données actuellement présentes. L'application demandera une confirmation.</div></div>
   <div class="card"><h2>Confidentialité et fonctionnement</h2><div class="stack caption"><div>Stockage local IndexedDB.</div><div>Révisions possibles hors connexion après installation.</div><div>Aucune connexion à ChatGPT depuis l'application.</div><div>Export et import JSON uniquement à ton initiative.</div><div>Si Safari efface les données de ce site, la sauvegarde JSON est nécessaire pour restaurer tes progrès.</div></div></div>
+  <div class="card"><h2>Gestion des cartes B2</h2><p class="caption">Ancienne bibliothèque disponible ici si tu veux modifier tes cartes personnelles.</p><button class="btn ghost full mt" data-screen="library">Ouvrir la bibliothèque B2</button></div>
   <div class="card"><h2>Gestion</h2><div class="caption mb">${state.cards.length} cartes enregistrées, ${state.history.length} réponses historisées.</div><button class="btn red" data-action="eraseAll">Effacer les données locales</button></div>
   <input class="file-input" type="file" accept=".json,application/json" id="planInput">
   <input class="file-input" type="file" accept=".json,application/json" id="backupInput">`;
@@ -418,6 +576,7 @@ function weeklyReport() {
   summary:{all:a,en,it,ratings:weeklyHistory().reduce((o,h)=>(o[['forgot','hard','good','easy'][h.rating]]++,o),{forgot:0,hard:0,good:0,easy:0})},
   recentDifficulties:state.cards.map(c=>({c,errors:state.history.filter(h=>h.cardId===c.id&&h.rating<=1).length})).filter(x=>x.errors>=2).sort((a,b)=>b.errors-a.errors).slice(0,30).map(({c,errors})=>({id:c.id,language:c.language,front:c.front,back:c.back,errors,lapses:c.lapses,repetitions:c.repetitions})),
   homework:{weekStart:lcWeek(),tasks:(state.tasks||[]).filter(t=>t.weekStart===lcWeek()),pending:lcTodo().length}, 
+  schoolSummary:{packs:(state.school?.packs||[]).map(p=>({id:p.id,title:p.title,subject:p.subject,cards:p.cards.length})),reviewsThisWeek:(state.school?.reviews||[]).filter(r=>Date.parse(r.at)>=monday().getTime()).length},
   requests:state.requests,planHistory:state.planHistory,
   // Snapshot complet : cette seule exportation permet de restaurer le contexte sans ancien chat.
   fullSnapshot:structuredClone(state),
@@ -526,7 +685,7 @@ async function importFile(inputId,type) {
  input.onchange=async()=>{
   const file=input.files?.[0];if(!file)return;
   if(file.size>30*1024*1024){tell('Fichier trop volumineux (maximum 30 Mo).',true);return;}
-  try {const json=JSON.parse(await file.text());if(type==='plan')await handlePlan(json);else await handleBackup(json);}
+  try {const json=JSON.parse(await file.text());if(type==='plan')await handlePlan(json);else if(type==='school')await schoolImport(json);else await handleBackup(json);}
   catch(err){tell(`Import impossible : ${err.message}`,true);}
  };
  input.click();
@@ -543,6 +702,7 @@ async function actionClick(action) {
   case 'downloadBackup':downloadJSON(backupObject(),'LexiCycle-sauvegarde');break;
   case 'downloadExample':downloadJSON(planExample(),'LexiCycle-exemple-programme');break;
   case 'importPlan':await importFile('planInput','plan');break;
+  case 'importSchool':await importFile('schoolInput','school');break;
   case 'restoreBackup':await importFile('backupInput','backup');break;
   case 'copyReport':{
     try{await navigator.clipboard.writeText(JSON.stringify(weeklyReport(),null,2));tell('Bilan complet copié. Tu peux le coller dans ChatGPT.');}
@@ -558,7 +718,13 @@ function renderEditor(){render();}
 document.addEventListener('click',async e=>{
  const btn=e.target.closest('button');if(!btn)return;
  flash=null;
- if(btn.dataset.screen){lc14Reset();screen=btn.dataset.screen;editId=null;studyCardId=null;revealed=false;render();window.scrollTo(0,0);return;}
+ if(btn.dataset.schoolBack!==undefined){schoolPackId=null;schoolReset();render();return;}
+ if(btn.dataset.schoolOpen){schoolPackId=btn.dataset.schoolOpen;schoolReset();render();return;}
+ if(btn.dataset.schoolReveal!==undefined){schoolRevealed=true;render();return;}
+ if(btn.dataset.schoolRate!==undefined){schoolRate(Number(btn.dataset.schoolRate));return;}
+ if(btn.dataset.schoolImport!==undefined){await importFile('schoolInput','school');return;}
+ if(btn.dataset.schoolExample!==undefined){downloadJSON(schoolExample(),'LexiCycle-exemple-ecole');return;}
+ if(btn.dataset.screen){schoolPackId=null;schoolReset();lc14Reset();screen=btn.dataset.screen;editId=null;studyCardId=null;revealed=false;render();window.scrollTo(0,0);return;}
  if(btn.dataset.language){lc14Reset();langFilter=btn.dataset.language;studyCardId=null;revealed=false;render();return;}
  if(btn.dataset.start){lc14Reset();langFilter=btn.dataset.start;screen='study';studyCardId=null;revealed=false;render();window.scrollTo(0,0);return;}
  if(btn.dataset.edit){

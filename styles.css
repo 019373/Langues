@@ -109,3 +109,14 @@ input, textarea, select {
         font-size: 10px;
     }
 }
+
+/* LexiCycle V1.5 : École */
+.school-pack{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:15px 0;border-top:1px solid var(--line)}
+.school-pack-content{min-width:0;flex:1;overflow-wrap:anywhere}
+.school-pack-content strong{display:block;margin-bottom:5px}
+.school-front .prompt,.school-front .answer{overflow-wrap:anywhere;white-space:pre-line}
+.school-pack .btn{flex-shrink:0}
+@media(max-width:380px){
+ .school-pack{gap:6px}
+ .school-pack .btn{padding:8px 10px}
+}
